@@ -3,9 +3,9 @@ using System.Collections.Generic;
 using System.Configuration;
 using System.Linq;
 using System.Text;
-using CouchBaseProviders.Configuration.CouchbaseOrleansDocumentExpiry;
+using CouchbaseProviders.Configuration.CouchbaseOrleansDocumentExpiry;
 
-namespace CouchBaseProviders.Configuration
+namespace CouchbaseProviders.Configuration
 {
     /// <summary>
     /// Orleans configuration utility extension methods.

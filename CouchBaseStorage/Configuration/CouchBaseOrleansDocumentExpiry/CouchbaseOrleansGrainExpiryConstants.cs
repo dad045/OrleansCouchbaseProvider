@@ -1,4 +1,4 @@
-﻿namespace CouchBaseProviders.Configuration.CouchbaseOrleansDocumentExpiry
+﻿namespace CouchbaseProviders.Configuration.CouchbaseOrleansDocumentExpiry
 {
     public static class CouchbaseOrleansGrainExpiryConstants
     {

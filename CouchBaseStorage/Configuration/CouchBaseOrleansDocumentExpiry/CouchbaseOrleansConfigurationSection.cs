@@ -1,10 +1,11 @@
 ﻿using System.Configuration;
+using Microsoft.Extensions.Configuration;
 
-namespace CouchBaseProviders.Configuration.CouchbaseOrleansDocumentExpiry
+namespace CouchbaseProviders.Configuration.CouchbaseOrleansDocumentExpiry
 {
-    public class CouchbaseOrleansConfigurationSection : ConfigurationSection
-    {
-        [ConfigurationProperty(CouchbaseOrleansGrainExpiryConstants.GrainExpiryCollectionName, IsDefaultCollection = false)]
-        public GrainExpiryCollection GrainExpiries => (GrainExpiryCollection) base[CouchbaseOrleansGrainExpiryConstants.GrainExpiryCollectionName];
-    }
+//    public class CouchbaseOrleansConfigurationSection : ConfigurationSection
+//    {
+//        [ConfigurationProperty(CouchbaseOrleansGrainExpiryConstants.GrainExpiryCollectionName, IsDefaultCollection = false)]
+//        public GrainExpiryCollection GrainExpiries => (GrainExpiryCollection) base[CouchbaseOrleansGrainExpiryConstants.GrainExpiryCollectionName];
+//    }
 }

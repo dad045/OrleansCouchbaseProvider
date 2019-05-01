@@ -1,8 +1,8 @@
 ﻿using System;
-using CouchBaseProviders.Configuration;
+using CouchbaseProviders.Configuration;
 using Xunit;
 
-namespace CouchBaseStorageTests
+namespace CouchbaseStorageTests
 {
     public class CouchbaseOrleansConfigurationExtensionsTests
     {

@@ -1,6 +1,6 @@
 ﻿using System.Configuration;
 
-namespace CouchBaseProviders.Configuration.CouchbaseOrleansDocumentExpiry
+namespace CouchbaseProviders.Configuration.CouchbaseOrleansDocumentExpiry
 {
     public class GrainExpiry : ConfigurationElement
     {

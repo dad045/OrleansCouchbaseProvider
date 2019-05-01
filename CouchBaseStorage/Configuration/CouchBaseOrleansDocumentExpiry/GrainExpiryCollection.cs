@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Configuration;
 
-namespace CouchBaseProviders.Configuration.CouchbaseOrleansDocumentExpiry
+namespace CouchbaseProviders.Configuration.CouchbaseOrleansDocumentExpiry
 {
     [ConfigurationCollection(typeof(GrainExpiry))]
     public class GrainExpiryCollection : ConfigurationElementCollection
