@@ -2,6 +2,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using System.Threading.Tasks;
 using Couchbase;
@@ -11,6 +12,7 @@ using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Orleans;
+using Orleans.Configuration;
 using Orleans.Runtime;
 using Orleans.Storage;
 
@@ -27,20 +29,26 @@ namespace CouchbaseProviders.Reminders
         private readonly ILogger<ReminderDataManager> _logger;
         private List<CouchbaseReminderDocument> _entries;
         private DateTimeOffset _lastGetAllReminderEntries;
+        private readonly ClusterOptions _clusterOptions;
 
         public ReminderDataManager(
             string bucketName,
             IBucketFactory bucketFactory,
             ILoggerFactory loggerFactory,
             IGrainFactory grainFactory,
-            IGrainReferenceConverter grainReferenceConverter
-        ) : base(bucketName, bucketFactory)
+            IGrainReferenceConverter grainReferenceConverter,
+            ClusterOptions clusterOptions
+        ) : base(bucketName, bucketFactory, clusterOptions)
         {
             BucketName = bucketName;
             _logger = loggerFactory.CreateLogger<ReminderDataManager>();
             _grainFactory = grainFactory;
             _grainReferenceConverter = grainReferenceConverter;
-            _baseIdQuery = $"select meta().id from {BucketName} where docType = \"{DocBaseOrleans.OrleansDocType}\" and docSubType = \"{DocSubTypes.Reminder}\" ";
+            _clusterOptions = clusterOptions;
+            if(!string.IsNullOrEmpty(clusterOptions?.ClusterId))
+                _baseIdQuery = $"select meta().id from {BucketName} where docSubType = \"{DocSubTypes.Reminder}\" and clusterId = \"{clusterOptions.ClusterId}\" ";
+            else
+                _baseIdQuery = $"select meta().id from {BucketName} where docSubType = \"{DocSubTypes.Reminder}\" ";
         }
 
         public async Task<bool> DeleteReminder(GrainReference grainRef, string reminderName, string eTag, bool forceDelete = false)
@@ -48,6 +56,17 @@ namespace CouchbaseProviders.Reminders
             try
             {
                 await Delete(CollectionName, reminderName, eTag);
+                //todo remove this try catch when reminder deletion investigation is complete
+                try
+                {
+                    throw new Exception("Delete Reminder called! Reminders are getting mysteriously deleted.  This is intended to help with that investigation. ");
+                } 
+                catch(Exception ex)
+                {
+                    _logger.LogError(ex,ex.Message);
+                    Console.WriteLine(ex.Message);
+                    Console.WriteLine(ex.StackTrace);
+                }
                 return true;
             }
             catch (InconsistentStateException e)
@@ -79,16 +98,25 @@ namespace CouchbaseProviders.Reminders
 
         public async Task<ReminderEntry> ReadReminder(GrainReference grainRef, string reminderName)
         {
-            CouchbaseReminderDocument reminderDoc;
+            CouchbaseReminderDocument reminderDoc = null;
             (string reminderDocumentString, string cas) = await Read(CollectionName, reminderName);
             try
             {
-                reminderDoc = JsonConvert.DeserializeObject<CouchbaseReminderDocument>(reminderDocumentString);
+                if(reminderDocumentString != null )
+                    reminderDoc = JsonConvert.DeserializeObject<CouchbaseReminderDocument>(reminderDocumentString);
             }
             catch (JsonException e)
             {
                 Console.WriteLine(e);
                 throw;
+            }
+
+            if (reminderDoc == null) return null;
+            
+            if(!string.IsNullOrEmpty(_clusterOptions.ClusterId) || !string.IsNullOrEmpty(reminderDoc.ClusterId))
+            {
+                if (string.IsNullOrEmpty(reminderDoc.ClusterId) || string.IsNullOrEmpty(_clusterOptions.ClusterId) || !reminderDoc.ClusterId.Equals(_clusterOptions.ClusterId))
+                    return null;
             }
 
             ReminderEntry reminder = reminderDoc.ToReminderEntry(_grainReferenceConverter);
@@ -118,16 +146,16 @@ namespace CouchbaseProviders.Reminders
 
         public async Task TestOnlyClearTable(string bucketName)
         {
-            var deleteQuery = new QueryRequest($"delete from {bucketName} where docType = \"{DocBaseOrleans.OrleansDocType}\" and docSubType = \"{DocSubTypes.Reminder}\"");
-            deleteQuery.ScanConsistency(ScanConsistency.RequestPlus);
-            deleteQuery.Metrics(false);
-            IQueryResult<JObject> ids = await Bucket.QueryAsync<JObject>(deleteQuery).ConfigureAwait(false);
+//            var deleteQuery = new QueryRequest($"delete from {bucketName} where docSubType = \"{DocSubTypes.Reminder}\"");
+//            deleteQuery.ScanConsistency(ScanConsistency.RequestPlus);
+//            deleteQuery.Metrics(false);
+//            IQueryResult<JObject> ids = await Bucket.QueryAsync<JObject>(deleteQuery).ConfigureAwait(false);
         }
 
 
         public async Task<CouchbaseReminderDocument> UpdateReminder(ReminderEntry entry)
         {
-            var doc = new CouchbaseReminderDocument(entry, entry.ETag);
+            var doc = new CouchbaseReminderDocument(entry, entry.ETag, _clusterOptions.ClusterId);
             string result = await WriteAsync(CollectionName, doc.ReminderName, doc, doc.ETag);
             doc.ETag = result;
             return doc;
@@ -152,7 +180,7 @@ namespace CouchbaseProviders.Reminders
             return entries;
         }
 
-        private async Task GetAllRemindersFromIdList(IEnumerable<string> idStrings, ICollection<CouchbaseReminderDocument> entries)
+        private async Task GetAllRemindersFromIdList(IList<string> idStrings, ICollection<CouchbaseReminderDocument> entries)
         {
             foreach (string id in idStrings)
             {
@@ -165,8 +193,8 @@ namespace CouchbaseProviders.Reminders
                     entries.Add(reminder);
                     continue;
                 }
-
-                _logger.LogError("Unable to retrieve reminder document from couchbase while an id was found.  ");
+                _logger.LogWarning($"Unable to retrieve reminder document from couchbase while an id was found. {id} position: {idStrings.IndexOf(id)} total:{idStrings.Count}");
+                _logger.LogDebug($"Response from Bucket GetAsync: \n{JsonConvert.SerializeObject(result)}");
             }
         }
 

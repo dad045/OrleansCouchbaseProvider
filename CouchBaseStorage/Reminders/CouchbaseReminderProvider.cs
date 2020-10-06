@@ -6,6 +6,7 @@ using Orleans;
 using Orleans.Runtime;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
+using Orleans.Configuration;
 
 namespace CouchbaseProviders.Reminders
 {
@@ -18,6 +19,7 @@ namespace CouchbaseProviders.Reminders
         private readonly IBucketFactory _bucketFactory;
         private readonly ILoggerFactory _loggerFactory;
         private readonly IGrainFactory _grainFactory;
+        private readonly ClusterOptions _clusterOptions;
 
         public CouchbaseReminderProvider(
             ILogger<CouchbaseReminderProvider> logger,
@@ -25,7 +27,8 @@ namespace CouchbaseProviders.Reminders
             IGrainReferenceConverter grainReferenceConverter,
             IBucketFactory bucketFactory,
             ILoggerFactory loggerFactory,
-            IGrainFactory grainFactory)
+            IGrainFactory grainFactory,
+            IOptions<ClusterOptions> clusterOptions)
         {
             _logger = logger;
             _loggerFactory = loggerFactory;
@@ -33,12 +36,13 @@ namespace CouchbaseProviders.Reminders
             _grainReferenceConverter = grainReferenceConverter;
             _bucketFactory = bucketFactory;
             _grainFactory = grainFactory;
+            _clusterOptions = clusterOptions.Value;
         }
 
         /// <inheritdoc />
         public Task Init()
         {
-            _manager = new ReminderDataManager(_settings.ReminderBucketName, _bucketFactory, _loggerFactory, _grainFactory, _grainReferenceConverter);
+            _manager = new ReminderDataManager(_settings.ReminderBucketName, _bucketFactory, _loggerFactory, _grainFactory, _grainReferenceConverter, _clusterOptions);
             return Task.CompletedTask;
         }
 

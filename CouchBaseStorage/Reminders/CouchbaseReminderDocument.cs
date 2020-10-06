@@ -21,6 +21,12 @@ namespace CouchbaseProviders.Reminders
         [JsonRequired]
         public string GrainId { get; set; }
 
+        [JsonProperty]
+        public string ClusterId { get; set; }
+        
+        [JsonProperty]
+        public string ServiceId { get; set; }
+        
         [JsonRequired]
         public TimeSpan Period { get; set; }
 
@@ -38,7 +44,7 @@ namespace CouchbaseProviders.Reminders
 
         public CouchbaseReminderDocument(){}
 
-        public CouchbaseReminderDocument(ReminderEntry entry, string etag)
+        public CouchbaseReminderDocument(ReminderEntry entry, string etag, string clusterId, string serviceId = null)
         {
             GrainHash = entry.GrainRef.GetUniformHashCode();
             GrainId = entry.GrainRef.ToKeyString();
@@ -47,6 +53,8 @@ namespace CouchbaseProviders.Reminders
             ReminderName = entry.ReminderName;
             StartAt = entry.StartAt;
             ETag = etag ?? "";
+            ClusterId = clusterId;
+            ServiceId = serviceId;
         }
 
         public ReminderEntry ToReminderEntry(IGrainReferenceConverter grainReferenceConverter)

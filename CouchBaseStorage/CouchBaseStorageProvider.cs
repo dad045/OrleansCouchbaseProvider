@@ -5,9 +5,11 @@ using Orleans.Providers;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Couchbase.IO;
 using CouchbaseProviders.CouchbaseComm;
 using CouchbaseProviders.Options;
 using Microsoft.Extensions.Options;
+using Orleans.Configuration;
 using Orleans.Runtime;
 
 // ReSharper disable ClassNeverInstantiated.Global
@@ -38,13 +40,21 @@ namespace Orleans.Storage
         private readonly CouchbaseProvidersSettings _settings;
         private readonly IBucketFactory _bucketFactory;
         private readonly string _storageBucketName;
+        private readonly ClusterOptions _clusterOptions;
 
-        public OrleansCouchbaseStorage(ILoggerFactory loggerFactory, IOptions<CouchbaseProvidersSettings> options, IBucketFactory bucketFactory, ITypeResolver typeResolver, IGrainFactory grainFactory) : base(loggerFactory, typeResolver, grainFactory)
+        public OrleansCouchbaseStorage(
+            ILoggerFactory loggerFactory, 
+            IOptions<CouchbaseProvidersSettings> options, 
+            IBucketFactory bucketFactory, 
+            ITypeResolver typeResolver, 
+            IGrainFactory grainFactory,
+            IOptions<ClusterOptions> clusterOptions) : base(loggerFactory, typeResolver, grainFactory)
         {
             _settings = options.Value;
             _storageBucketName = _settings.StorageBucketName;
             _logger = loggerFactory.CreateLogger<OrleansCouchbaseStorage>();
             _bucketFactory = bucketFactory;
+            _clusterOptions = clusterOptions.Value;
         }
 
         /// <summary>
@@ -60,7 +70,7 @@ namespace Orleans.Storage
 
 //            var documentExpiries = CouchbaseOrleansConfigurationExtensions.GetGrainExpiries();
 
-            DataManager = new CouchbaseDataManager(_storageBucketName, _bucketFactory);//, documentExpiries);
+            DataManager = new CouchbaseDataManager(_storageBucketName, _bucketFactory, _clusterOptions);//, documentExpiries);
             return base.Init(name, providerRuntime, config);
         }
     }
@@ -81,6 +91,7 @@ namespace Orleans.Storage
         protected IBucket Bucket;
 
         private readonly IBucketFactory _bucketFactory;
+        private readonly ClusterOptions _clusterOptions;
 
         /// <summary>
         /// Document expiries by grain type
@@ -136,7 +147,7 @@ namespace Orleans.Storage
             DocumentExpiries = documentExpiries;
         }
 
-        public CouchbaseDataManager(string bucketName, IBucketFactory bucketFactory)
+        public CouchbaseDataManager(string bucketName, IBucketFactory bucketFactory, ClusterOptions clusterOptions)
         {
             //Bucket name should not be empty
             //Keep in mind that you should create the buckets before being able to use them either
@@ -153,6 +164,7 @@ namespace Orleans.Storage
             Bucket = bucketFactory.GetBucket(bucketName);
             OrleansCouchbaseStorage.IsInitialized = true;
             _bucketFactory = bucketFactory;
+            _clusterOptions = clusterOptions;
         }
 
         /// <summary>
@@ -166,6 +178,8 @@ namespace Orleans.Storage
         {
             var docID = GetDocumentID(collectionName, key);
             var result = await Bucket.RemoveAsync(docID, ulong.Parse(eTag));
+            if (result.Status == ResponseStatus.KeyNotFound)
+                return; //no need to worry if its already gone...
             if (!result.Success)
                 throw new Orleans.Storage.InconsistentStateException(result.Message, eTag, result.Cas.ToString());
         }
@@ -175,6 +189,7 @@ namespace Orleans.Storage
         /// </summary>
         /// <param name="collectionName">The type of the grain state object.</param>
         /// <param name="key">The grain id string.</param>
+        /// <param name="clusterId"></param>
         /// <returns>Completion promise for this operation.</returns>
         public async Task<Tuple<string, string>> Read(string collectionName, string key)
         {
@@ -256,7 +271,12 @@ namespace Orleans.Storage
 
             if (ulong.TryParse(eTag, out ulong realETag))
             {
-                IOperationResult<T> r = await Bucket.UpsertAsync(docId, doc, realETag, expiry);
+                //todo simplify this to always pass expiry after disappearing reminder investigation is complete.  Using TimeSpan.Zero is the same as having no ttl
+                IOperationResult<T> r;
+                if (expiry.Equals(TimeSpan.Zero))
+                    r = await Bucket.UpsertAsync(docId, doc, realETag);
+                else
+                    r = await Bucket.UpsertAsync(docId, doc, realETag, expiry);
                 if (!r.Success)
                 {
                     throw new Orleans.Storage.InconsistentStateException(r.Status.ToString(), eTag, r.Cas.ToString());
@@ -266,7 +286,11 @@ namespace Orleans.Storage
             }
             else
             {
-                IOperationResult<T> r = await Bucket.InsertAsync(docId, doc, expiry);
+                IOperationResult<T> r;
+                if (expiry.Equals(TimeSpan.Zero))
+                    r = await Bucket.InsertAsync(docId, doc);
+                else
+                    r = await Bucket.InsertAsync(docId, doc, expiry);
 
                 //check if key exist and we don't have the CAS
                 if (!r.Success && r.Status == Couchbase.IO.ResponseStatus.KeyExists)
@@ -303,7 +327,16 @@ namespace Orleans.Storage
         // ReSharper disable once VirtualMemberNeverOverridden.Global
         protected virtual string GetDocumentID(string collectionName, string key)
         {
-            return collectionName + "_" + key;
+            const string s = "_";
+            string id = collectionName + s + key;
+            if (_clusterOptions == null)
+                return id;
+            if (!string.IsNullOrEmpty(_clusterOptions.ClusterId))
+                id += s + _clusterOptions.ClusterId;
+            //todo should we include service id?
+//            if (!string.IsNullOrEmpty(_clusterOptions.ServiceId))
+//                id += s + _clusterOptions.ServiceId;
+            return id;
         }
     }
 }
